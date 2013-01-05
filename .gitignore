@@ -1,0 +1,12 @@
+*.pyc
+*.DS_Store
+build/*
+dist/*
+assetsy.esproj
+*.egg-info/*
+*/._*
+._*
+*.sublime-project
+*.sublime-workspace
+test/
+assets.yml
