@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='Assetsy',
-    version=".".join(map(str, (1,0,0,'alpha')),
+    version=".".join(map(str, (1,0,0,'alpha'))),
     description='A vitaminated way to minify, combine and optimize your web resources',
     long_description=open('README.rst').read(),
     author='Syrus Akbary Nieto',
