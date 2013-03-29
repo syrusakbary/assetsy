@@ -9,7 +9,7 @@ from assetsy.utils.loading import load_processor
 __all__ = ('Processor', 'CallableProcessor')
 
 from types import ClassType
-from assetsy.exceptions import ProcessorError
+from assetsy.exceptions import ProcessorError, BuildError
 
 class ProcessorCollection (object):
     def __init__(self,*processors):
@@ -19,6 +19,11 @@ class ProcessorCollection (object):
 
     def add (self,processor):
         self._processors.append(processor)
+
+    def __add__(self, processor):
+        collection = ProcessorCollection()
+        collection._processors = self._processors + processor._processors
+        return collection
 
     def process(self,asset):
         for processor in self._processors:
@@ -30,16 +35,19 @@ class ProcessorCollection (object):
 
 
 class ProcessorManager:
-    _processors = {}
+    
     def __init__(self,environment):
         self.environment = environment
+        self._processors = {}
+        self._processors_errors = {}
 
     def __getitem__ (self,name):
+        if name in self._processors_errors:
+            raise self._processors_errors[name]
         if name in self:
             return self._processors[name]
             # raise Exception('There is no "%s" processor.'%name)
         return name
-        
 
     def __contains__ (self,name):
         return name in self._processors
@@ -54,8 +62,9 @@ class ProcessorManager:
         if isinstance(processor, (Processor, ProcessorCollection)):
             return processor
         elif isinstance(processor, basestring):
-            print processor
+            # print processor
             func = eval(processor,{},self)
+            # print processor, func
             if isinstance(func, Processor): return func()
             else: return func
         elif isinstance(processor,(tuple,list)):
@@ -65,8 +74,11 @@ class ProcessorManager:
         raise ProcessorError("%s must be a instance of Processor"%processor.__name__)
 
     def setup(self):
-        for processor in self._processors.values():
-            processor.setup()
+        for name, processor in self._processors.iteritems():
+            try:
+                processor.setup()
+            except Exception, e:
+                self._processors_errors[name] = e
 
     def get_multiple(self, processors):
         return ProcessorCollection(*[self.get(processor) for processor in processors])
@@ -90,20 +102,20 @@ class Processor(object):
 
     # @memoized
     def process (self, asset,*args,**kwargs):
-        enabled = kwargs.pop('enabled',True)
+        enabled = kwargs.pop('_enabled',True)
         if not enabled: return asset
-        asset = copy(asset)
-        try:
-            if asset.single:
-                return self.process_single(asset,*args,**kwargs)
-            else:
-                return self.process_collection(asset,*args,**kwargs)
-        except TypeError:
-            raise Exception("The arguments of the process function in %s processor doesn't match"%self.__class__.__name__)
+        # asset = copy(asset)
+        # try:
+        if asset.single:
+            return self.process_single(asset,*args,**kwargs)
+        else:
+            return self.process_collection(asset,*args,**kwargs)
+        # except TypeError:
+        #     raise Exception("The arguments of the process function in %s processor doesn't match"%self.__class__.__name__)
 
     def process_collection (self,assets,*args,**kwargs):
         """Return all the child resources or False, if there is no change"""
-        new_assets = AssetCollection(processors=assets.processors,environment=assets.environment,storage=assets.storage)
+        new_assets = AssetCollection(environment=assets.environment,storage=assets.storage)
         for asset in assets:
             new_assets.add(self.process(asset,*args,**kwargs))
         return new_assets
@@ -156,7 +168,7 @@ class ExternalProcessor(Processor):
             stdout, stderr = proc.communicate(
                 data.read() if hasattr(data, 'read') else data)
             if proc.returncode:
-                raise Exception(
+                raise BuildError(
                     '%s: subprocess returned a non-success result code: '
                     '%s, stdout=%s, stderr=%s' % (
                         cls.__name__, proc.returncode, stdout, stderr))

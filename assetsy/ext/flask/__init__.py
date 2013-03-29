@@ -60,7 +60,6 @@ class Assetsy():
                         else filename
                     ) & 0xffffffff
                 ))
-
             return rv
         except KeyError:
             raise NotFound()

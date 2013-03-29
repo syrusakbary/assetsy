@@ -7,8 +7,9 @@ class Concat(Processor):
     def process_collection(self, assets):
         #output = args[0]
         asset = self.assetClass(environment = assets.environment,storage=assets.storage)
-        asset.content = '\n'.join([_a.content for _a in assets])
-        asset.last_modified = max([_a.last_modified for _a in assets])
+        flatten = assets.flatten
+        asset.content = '\n'.join([_a.content for _a in flatten])
+        asset.last_modified = max([_a.last_modified for _a in flatten])
         # asset.source = source
         return asset
 

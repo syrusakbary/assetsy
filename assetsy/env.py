@@ -2,6 +2,7 @@ from os import path, makedirs
 from assetsy.assets import FileAsset, GlobAsset, AssetCollection
 from glob import has_magic
 from assetsy.processors import ProcessorManager
+from assetsy.exceptions import BuildError
 import types
 
 from watchdog.observers import Observer
@@ -29,6 +30,7 @@ class Environment(object):
         if base:
             self.base = base
         self.before = []
+        self.paths = {}
         self._outputs = []
         self.outputs = {}
         self._references = {}
@@ -60,9 +62,9 @@ class Environment(object):
     #     self.processors[name] = self.resolve_processor(processor)
 
     def compile(self,dir,force=False):
-        outputs = self.build()
+        # outputs = self.build()
         # self.process() #hack
-        for outputfile,asset in outputs.iteritems():
+        for outputfile,asset in self.outputs.iteritems():
             complete_path = path.join(dir,outputfile)
             pathname = path.dirname(complete_path)
             if not path.isdir(pathname):
@@ -96,18 +98,24 @@ class Environment(object):
     def asset (self, output=None, src=[], **kwargs):
         # print output, src, kwargs
         kwargs['environment'] = self
+        name = kwargs.pop('name',None)
         if len(src)>1:
+            pre = kwargs.pop('pre')
             asset = AssetCollection(**kwargs)
+            kwargs.pop('processors')
             for _asset in src:
-                if isinstance(_asset,basestring): _asset = self.asset(src=[_asset],**kwargs)
+                if isinstance(_asset,basestring): _asset = self.asset(src=[_asset],pre=pre, **kwargs)
                 asset.add(_asset)
         else:
-            if not src: 
+            if not src and not name: 
                 src = [output]
                 output = '{path}{filename}'
             asset = self.single_asset(*src,**kwargs)
+
         if output:
             self.output(output,asset)
+        if name:
+            self._references[name] = asset
         return asset
 
     @property
@@ -117,21 +125,29 @@ class Environment(object):
     @base.setter
     def base(self,base):
         self._base = base
+        self.add_path('default',base)
+
+    def add_path(self,name, path):
+        if name=='default': self._base = path
+        self.paths[name] = path
         if self.instant_reload:
             observer = Observer()
-            observer.schedule(self.reload_handler, path=base, recursive=True)
+            observer.schedule(self.reload_handler, path=path, recursive=True)
             observer.start()
 
-
     def settings(self, settings):
-        print 'a'
         self.config = {}
+        self.paths = {}
         if 'base' in settings:
             self.base = settings['base']
-        if 'path' in settings:
-            self.path = settings['path']
+        if 'build' in settings:
+            self.build_path = settings['build']
         if 'config' in settings:
             self.config = settings['config']
+
+        if 'paths' in settings:
+            for name, path in settings['paths'].iteritems():
+                self.add_path(name, path)
 
         self.before = []
         if 'before' in settings:
@@ -141,13 +157,15 @@ class Environment(object):
                 self.before.append((formatted_re, processor))
 
         self.processor_manager.setup()
-        
+
         assets = settings.get('assets',[])
         for asset in assets:
             output = asset.get('file',None)
+            path = asset.get('path','default')
+            name = asset.get('name',None)
             src = asset.get('src',[])
             processors = asset.get('processors',[])
-            self.asset(output=output,src=to_list(src),processors=to_list(processors))
+            self.asset(output=output,src=to_list(src),name=name, processors=to_list(processors),pre=self.get_path(path))
 
     def from_yaml(self,filename):
         import yaml
@@ -155,6 +173,10 @@ class Environment(object):
         settings = yaml.load(stream)
         self.settings(settings)
 
+    def get_path(self,path):
+        if path not in self.paths:
+            raise Exception("Path %s is not defined"%path)
+        return self.paths[path]
     def output (self,path,asset):
         self._outputs.append((path,asset))
 
@@ -167,16 +189,21 @@ class Environment(object):
     @property
     def iter_assets(self):
         for name, asset in self._outputs:
-            asset.load()
-            dumped = asset.dump()
-            if isinstance(dumped,AssetCollection):
-                for _asset in dumped.flatten:
-                    yield self.asset_name(_asset,name)
-            else:
-                yield self.asset_name(dumped,name)
-
+            try:
+                asset.load()
+                dumped = asset.dump()
+                if isinstance(dumped,AssetCollection):
+                    for _asset in dumped.flatten:
+                        yield self.asset_name(_asset,name)
+                else:
+                    yield self.asset_name(dumped,name)
+            except BuildError:
+                logging.exception('Cannot build asset "%s" '%name)
     def build(self):
+        init = time()
         self.outputs = dict(list(self.iter_assets))
+        total = time()-init
+        logging.info('Build complete in %.1f seconds', total)
         return self.outputs
 
     # def outputs(self):
@@ -188,10 +215,7 @@ class ReloadEventHandler(FileSystemEventHandler):
     self.env = env
 
   def reload (self):
-    init = time()
     self.env.build()
-    total = time()-init
-    logging.info('Reload complete in %.1f nanoseconds', total*100)
 
   def on_moved(self, event):
     super(ReloadEventHandler, self).on_moved(event)

@@ -1,6 +1,7 @@
 import os, subprocess
 from assetsy.processors import Processor
 from assetsy.assets import StringAsset
+from assetsy.exceptions import BuildError
 
 class JsMin(Processor):
     def setup(self):
@@ -25,7 +26,7 @@ class CoffeeScript(Processor):
             stderr=subprocess.PIPE)
         stdout, stderr = proc.communicate(asset.content)
         if proc.returncode != 0:
-            raise Exception(('coffeescript: subprocess had error: stderr=%s, '+
+            raise BuildError(('coffeescript: subprocess had error: stderr=%s, '+
                                'stdout=%s, returncode=%s') % (
                 stderr, stdout, proc.returncode))
         elif stderr:
@@ -37,11 +38,10 @@ class JsJinja(Processor):
     def setup(self):
         try:
             from jsjinja import JsJinja
+            env = self.config.get('jsjinja',{}).get('env',None)
+            self.jsjinja = JsJinja(env)
         except ImportError:
             raise EnvironmentError('The "jsjinja" package is not installed.')
-        else:
-            env = self.config['jsjinja']['env']
-            self.jsjinja = JsJinja(env)
 
     def process (self, asset, lib=False, minified=True):
         processed = super(JsJinja, self).process(asset)
@@ -55,5 +55,5 @@ class JsJinja(Processor):
 
     def process_single(self, asset):
         # print  '***********', asset, asset.content, '***********'
-        asset.content = self.jsjinja.generate_source(asset.content)
+        asset.content = self.jsjinja.generate_source(asset.content, name=asset.source)+';'
         return asset

@@ -24,13 +24,17 @@ class BaseAsset:
 
     @processors.setter
     def processors(self,value):
-        self._processors = self.environment.processor_manager.get(value)
+        self._processors = self.environment.processor_manager.get(value) if self.environment else None
+        # print 'SET PROCESSOR', type(self), value
 
     def process(self):
-        # print 'PROCESSING, %r'%self
+        asset = copy(self)
         processor = copy(self.processors)
-        processor = self.processors
-        return processor.process(self)
+        # processor = self.processors
+        return processor.process(asset)
+
+    def dump (self):
+        return self.process()
 
 
 class AssetSingle(BaseAsset):
@@ -72,9 +76,6 @@ class AssetSingle(BaseAsset):
                      self.last_modified,
                      self.environment))
 
-    def dump (self):
-        return self.process()
-
     def __repr__ (self):
         return "<%s processors=%s environment=%s>"%(self.__class__.__name__,self.processors,self.environment)
 
@@ -94,13 +95,13 @@ class AssetManager:
 
 class StringAsset(AssetSingle):
     def __init__(self,content,**kwargs):
-        BaseAsset.__init__(self,**kwargs)
-        self._content_string = content
-    def load(self):
-        self._content = self._content_string
+        super(StringAsset,self).__init__(self,**kwargs)
+        self.content = content
+    # def load(self):
+    #     self._content = self._content_string
 
 class FileAsset(AssetSingle):
-    def __init__(self,source,from_file=None,processors=[],environment=None,**kwargs):
+    def __init__(self,source,pre, from_file=None,processors=[],environment=None,**kwargs):
         processors = list(environment.before_processors(source)) + processors
         super(FileAsset,self).__init__(processors=processors,environment=environment,**kwargs)
         if from_file:
@@ -108,7 +109,8 @@ class FileAsset(AssetSingle):
         else:
             self.path = source
         extra = ''
-        self._filename = self._exists(source,from_file)
+        self._filename = source #self._exists(source,from_file)
+        self.pre = pre
         # except ResourceNotFoundError:
         #     m = re.match(self.FILE_RE,source)
         #     if m:
@@ -146,11 +148,15 @@ class FileAsset(AssetSingle):
         return filename
 
     @property
+    def filename(self):
+        return os.path.join(self.pre, self._filename)
+
+    @property
     def last_modified(self):
-        return os.path.getmtime(self._filename)
+        return os.path.getmtime(self.filename)
     
     def load(self):
-        self._content = open(self._filename).read()
+        self._content = open(self.filename).read()
     
     def __repr__ (self):
         return '<FileAsset "%s">'%(self._source+self._extra)
@@ -193,10 +199,20 @@ class AssetCollection (BaseAsset):
 
     def dump(self):
         assets = AssetCollection(environment=self.environment,storage=self.storage)
-        # assets.processors = self.processors
+        assets.processors = copy(self.processors)
         for asset in self._assets:
             assets.add(asset.dump())
         return assets.process()
+        # if assets[0].source.endswith('.jade'): raise
+        # return d
+
+
+    # def dump(self):
+    #     assets = AssetCollection(environment=self.environment,storage=self.storage)
+    #     # assets.processors = self.processors
+    #     for asset in self._assets:
+    #         assets.add(asset.dump())
+    #     return assets.process()
 
     def __hash__(self):
         return hash((tuple(self._assets),
@@ -241,9 +257,9 @@ class AssetCollection (BaseAsset):
     #         else:
     #             self.add(resource)
 
-    def all (self):
-        self.load()
-        return self._assets
+    # def all (self):
+    #     self.load()
+    #     return self._assets
 
     def __repr__ (self):
         return "<AssetCollection assets=%s processors=%s environment=%s>"%(self._assets,self.processors,self.environment)
@@ -267,15 +283,18 @@ class AssetCache (BaseAsset):
         return self.dumped_assed
 
 class GlobAsset (AssetCollection):
-    def __init__(self,path, **kwargs):
+    def __init__(self, path, pre=None, **kwargs):
         super(GlobAsset,self).__init__(**kwargs)
         self._path = path
+        self.pre = pre
         self._initialized = False
+
     def load(self):
         self._assets = []
-        gl_path =  glob.glob(self.environment.abspath(self._path))
+        gl_path =  glob.glob(os.path.join(self.pre, self._path))
         for _file in gl_path:
-            self.add(FileAsset(_file[len(self.environment.abspath('./'))+1:], environment=self.environment, storage=self.storage))
+            filename = os.path.relpath(_file, self.pre)
+            self.add(FileAsset(filename, pre=self.pre, environment=self.environment, storage=self.storage))
         return super(GlobAsset,self).load()
 
 from assetsy.processors import ProcessorCollection

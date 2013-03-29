@@ -22,4 +22,7 @@ setup(
         'Topic :: Internet :: WWW/HTTP',
         'Topic :: Software Development :: Libraries',
     ],
+    entry_points = {
+      'console_scripts' : ['assetsy = assetsy.command:command',]
+    }
 )

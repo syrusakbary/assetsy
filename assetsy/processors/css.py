@@ -1,5 +1,5 @@
 from assetsy.processors import Processor, ExternalProcessor
-from assetsy.exceptions import ResourceNotFoundError
+from assetsy.exceptions import ResourceNotFoundError, BuildError
 import os, subprocess
 # import inspect
 # import shlex
@@ -111,7 +111,7 @@ class AutoregisterURL(Processor):
         try:
             new_url = new_asset.url+extra
         except:
-            raise Exception(asset_path)
+            raise BuildError(asset_path)
         result = 'url(%s%s%s%s%s)' % (
                     text_before, quotes_used, new_url, quotes_used, text_after)
         return result
