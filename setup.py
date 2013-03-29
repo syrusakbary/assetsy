@@ -10,7 +10,7 @@ setup(
     url='http://github.com/syrusakbary/assetsy',
     license='BSD',
     packages=find_packages(exclude=['ez_setup']),
-    install_requires=[],
+    install_requires=['glob2','watchdog'],
     classifiers=[
         'Environment :: Web Environment',
         'Framework :: Django',
